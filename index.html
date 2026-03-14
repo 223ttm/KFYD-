@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>GM Board Game - Visual Update</title>
+    <style>
+        body { display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f8f9fa; margin: 0; color: #333; }
+        .screen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 500px; }
+        .active { display: flex; }
+
+        /* --- セットアップ画面の改善 --- */
+        .setup-container { width: 100%; display: flex; flex-direction: column; gap: 15px; }
+        .setup-card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); text-align: center; width: 100%; box-sizing: border-box; }
+        
+        .player-row { 
+            display: flex; align-items: center; gap: 15px; padding: 15px; 
+            background: #fff; border-radius: 15px; border: 2px solid #eee;
+            transition: border-color 0.3s;
+        }
+        /* 入力フォーカス時に色を目立たせる */
+        .player-row:focus-within { border-color: #333; }
+
+        .emoji-box { 
+            width: 50px; height: 50px; font-size: 1.5em; border: none; border-radius: 12px; 
+            text-align: center; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .name-input { 
+            flex-grow: 1; padding: 12px 15px; font-size: 1.1em; border: 1px solid #ddd; 
+            border-radius: 10px; outline: none; background: #fdfdfd;
+        }
+
+        .section-title { margin-bottom: 20px; font-size: 1.4em; font-weight: bold; color: #444; }
+
+        /* --- 共通ボタン --- */
+        .primary-btn { 
+            margin-top: 25px; background: #333; color: white; border: none; 
+            padding: 18px 40px; border-radius: 50px; font-size: 1.2em; font-weight: bold;
+            cursor: pointer; width: 100%; transition: all 0.2s; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .primary-btn:active { transform: scale(0.98); opacity: 0.9; }
+
+        /* --- ゲーム画面（前回までのスタイルを維持） --- */
+        .scoreboard { display: flex; gap: 10px; margin-bottom: 20px; padding: 15px; background: white; border-radius: 15px; width: 100%; justify-content: space-around; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .score-item { display: flex; flex-direction: column; align-items: center; font-weight: bold; position: relative; }
+        .crown { font-size: 1.2em; min-height: 1.2em; visibility: hidden; }
+        .is-top .crown { visibility: visible; animation: bounce 0.5s infinite alternate; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+        
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; margin-top: 20px; }
+        .p-btn { padding: 18px 10px; border: none; border-radius: 12px; color: white; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
+        .selected { outline: 4px solid #333; outline-offset: 3px; }
+
+        canvas { border: 5px solid #333; background: #fff; border-radius: 10px; cursor: crosshair; max-width: 100%; height: auto; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; }
+        .rank-row { display: flex; justify-content: space-between; padding: 15px; border-bottom: 1px solid #eee; opacity: 0; transform: translateY(15px); }
+        .animate-rank { animation: slideUp 0.5s forwards; }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="startScreen" class="screen active">
+        <div style="margin-top: 100px; text-align: center;">
+            <h1 style="font-size: 3em; letter-spacing: 2px;">🎨 TERRITORY<br>BATTLE</h1>
+            <button class="primary-btn" onclick="showScreen('setupScreen')">GAME START</button>
+        </div>
+    </div>
+
+    <div id="setupScreen" class="screen">
+        <div class="setup-card">
+            <div class="section-title">プレイヤー設定</div>
+            <div id="playerInputs" class="setup-container"></div>
+            <button class="primary-btn" onclick="startGame()">この内容で開始！</button>
+        </div>
+    </div>
+
+    <div id="gameScreen" class="screen">
+        <div class="scoreboard" id="scoreboardUI"></div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="controls" id="controlsUI"></div>
+        <button class="primary-btn" style="background: #666; font-size: 1em;" onclick="askConfirm()">🏁 ゲーム終了</button>
+    </div>
+
+    <div id="confirmOverlay" class="overlay">
+        <div style="background:white; color:#333; padding:40px; border-radius:25px; text-align:center;">
+            <h3>本当に終了しますか？</h3>
+            <div style="display:flex; gap:15px; justify-content:center; margin-top:20px;">
+                <button onclick="confirmFinish()" style="background:#ff4757; color:white; padding:12px 30px; border:none; border-radius:10px; font-weight:bold; cursor:pointer;">終了する</button>
+                <button onclick="closeConfirm()" style="background:#ced4da; color:white; padding:12px 30px; border:none; border-radius:10px; font-weight:bold; cursor:pointer;">戻る</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="resultOverlay" class="overlay">
+        <div style="background:white; color:#333; padding:40px; border-radius:25px; text-align:center; min-width:350px;">
+            <span style="font-size:4em;">🏆</span>
+            <h1 style="margin: 10px 0 30px;">RANKING</h1>
+            <div id="rankingContainer"></div>
+            <button class="primary-btn" onclick="location.reload()">タイトルへ戻る</button>
+        </div>
+    </div>
+
+    <script>
+        const mapData = [
+            [1,1,1,1,1,1,1,1,1],[1,0,0,0,1,0,0,0,1],[1,0,0,0,1,0,0,0,1],
+            [1,0,1,1,1,1,1,0,1],[1,1,1,1,0,1,1,1,1],[1,0,1,1,1,1,1,0,1],
+            [1,0,0,0,1,0,0,0,1],[1,0,0,0,1,0,0,0,1],[1,0,1,1,1,1,1,0,1],
+            [1,1,1,1,0,1,1,1,1],[1,0,1,1,1,1,1,0,1],[1,0,0,0,1,0,0,0,1],
+            [1,0,0,0,1,0,0,0,1],[1,1,1,1,1,1,1,1,1]
+        ];
+
+        let players = [
+            { id: 1, name: "Player 1", color: "#2ecc71", emoji: "🐱", score: 0 },
+            { id: 2, name: "Player 2", color: "#ff4757", emoji: "🐶", score: 0 },
+            { id: 3, name: "Player 3", color: "#a55eea", emoji: "🦊", score: 0 },
+            { id: 4, name: "Player 4", color: "#45aaf2", emoji: "🐼", score: 0 }
+        ];
+
+        let paintedTiles = Array.from({ length: mapData.length }, () => Array(mapData[0].length).fill(0));
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const tileSize = 35;
+        let currentPlayerId = 1;
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            if(screenId === 'setupScreen') initSetup();
+        }
+
+        function initSetup() {
+            document.getElementById('playerInputs').innerHTML = players.map(p => `
+                <div class="player-row">
+                    <input type="text" class="emoji-box" style="background-color: ${p.color}22; border: 2px solid ${p.color}" value="${p.emoji}" id="emoji${p.id}" maxlength="2">
+                    <input type="text" class="name-input" value="${p.name}" id="name${p.id}" placeholder="名前を入力...">
+                </div>
+            `).join('');
+        }
+
+        function startGame() {
+            players.forEach(p => {
+                p.name = document.getElementById(`name${p.id}`).value || `P${p.id}`;
+                p.emoji = document.getElementById(`emoji${p.id}`).value || "👤";
+            });
+            initUI();
+            showScreen('gameScreen');
+            draw();
+        }
+
+        function initUI() {
+            canvas.width = mapData[0].length * tileSize;
+            canvas.height = mapData.length * tileSize;
+            
+            document.getElementById('scoreboardUI').innerHTML = players.map(p => `
+                <div id="item${p.id}" class="score-item" style="color: ${p.color}">
+                    <div class="crown">👑</div><div style="font-size:1.4em">${p.emoji}</div><span id="score${p.id}" style="font-size:1.6em">0</span>
+                </div>
+            `).join('');
+
+            document.getElementById('controlsUI').innerHTML = players.map(p => `
+                <button id="btn${p.id}" class="p-btn ${p.id===1?'selected':''}" 
+                        style="background:${p.color}" onclick="selectPlayer(${p.id})">
+                    <span style="font-size:1.2em">${p.emoji}</span><span style="overflow:hidden; text-overflow:ellipsis;">${p.name}</span>
+                </button>
+            `).join('');
+        }
+
+        function selectPlayer(id) {
+            currentPlayerId = id;
+            document.querySelectorAll('.p-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('btn' + id).classList.add('selected');
+        }
+
+        function updateScore() {
+            const counts = { 1:0, 2:0, 3:0, 4:0 };
+            paintedTiles.forEach(row => row.forEach(t => { if(t!==0) counts[t]++; }));
+            const maxVal = Math.max(...Object.values(counts));
+            players.forEach(p => {
+                p.score = counts[p.id];
+                document.getElementById(`score${p.id}`).innerText = p.score;
+                document.getElementById(`item${p.id}`).classList.toggle('is-top', p.score === maxVal && maxVal > 0);
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for(let y=0; y<mapData.length; y++){
+                for(let x=0; x<mapData[y].length; x++){
+                    if(mapData[y][x] === 1){
+                        const pId = paintedTiles[y][x];
+                        ctx.fillStyle = pId !== 0 ? players.find(p=>p.id===pId).color : "#fff";
+                        ctx.fillRect(x*tileSize, y*tileSize, tileSize, tileSize);
+                        ctx.strokeStyle = "#eee"; ctx.strokeRect(x*tileSize, y*tileSize, tileSize, tileSize);
+                    } else {
+                        ctx.fillStyle = "#e9ecef"; ctx.fillRect(x*tileSize, y*tileSize, tileSize, tileSize);
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = Math.floor(((e.clientX - rect.left) * scaleX) / tileSize);
+            const y = Math.floor(((e.clientY - rect.top) * scaleY) / tileSize);
+            if(mapData[y] && mapData[y][x] === 1) {
+                paintedTiles[y][x] = (paintedTiles[y][x] === currentPlayerId) ? 0 : currentPlayerId;
+                draw(); updateScore();
+            }
+        });
+
+        function askConfirm() { document.getElementById('confirmOverlay').style.display='flex'; }
+        function closeConfirm() { document.getElementById('confirmOverlay').style.display='none'; }
+        function confirmFinish() { closeConfirm(); showResult(); }
+
+        function showResult() {
+            const sorted = [...players].sort((a,b) => b.score - a.score);
+            const container = document.getElementById('rankingContainer');
+            container.innerHTML = '';
+            document.getElementById('resultOverlay').style.display='flex';
+            let curRank = 1;
+            sorted.forEach((p, i) => {
+                if(i > 0 && p.score < sorted[i-1].score) curRank = i + 1;
+                const row = document.createElement('div');
+                row.className = 'rank-row'; row.style.color = p.color;
+                row.innerHTML = `<span style="font-weight:bold">${curRank}位</span><span>${p.emoji} ${p.name}</span><b>${p.score} pt</b>`;
+                container.appendChild(row);
+                setTimeout(() => row.classList.add('animate-rank'), i * 300);
+            });
+        }
+    </script>
+</body>
+</html>
